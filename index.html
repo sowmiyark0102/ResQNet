@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ResQNet — Hyperlocal Disaster Response</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    :root {
+      --bg: #0b0d0f;
+      --surface: #12151a;
+      --surface2: #181c23;
+      --border: #222733;
+      --danger: #ff3b4e;
+      --warn: #ff8c00;
+      --safe: #00d68f;
+      --info: #0095ff;
+      --purple: #9b59ff;
+      --text: #e8eaf0;
+      --muted: #5a6070;
+    }
+
+    * { margin:0;padding:0;box-sizing:border-box; }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      overflow: hidden;
+    }
+
+    /* ─── HEADER ───────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 1000;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--danger);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .logo span { color: var(--danger); }
+
+    .header-stats {
+      display: flex;
+      gap: 20px;
+    }
+
+    .hstat {
+      text-align: center;
+    }
+
+    .hstat-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .hstat-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+    }
+
+    .hstat.danger .hstat-val { color: var(--danger); }
+    .hstat.warn .hstat-val { color: var(--warn); }
+    .hstat.safe .hstat-val { color: var(--safe); }
+    .hstat.info .hstat-val { color: var(--info); }
+
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .btn {
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid;
+      transition: all 0.15s;
+    }
+
+    .btn-danger {
+      background: rgba(255,59,78,0.15);
+      border-color: rgba(255,59,78,0.4);
+      color: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: rgba(255,59,78,0.25);
+    }
+
+    .btn-primary {
+      background: var(--info);
+      border-color: var(--info);
+      color: white;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      animation: bigpulse 1.5s infinite;
+    }
+
+    @keyframes bigpulse {
+      0% { box-shadow: 0 0 0 0 rgba(255,59,78,0.7); }
+      70% { box-shadow: 0 0 0 8px rgba(255,59,78,0); }
+      100% { box-shadow: 0 0 0 0 rgba(255,59,78,0); }
+    }
+
+    /* ─── MAIN LAYOUT ──────────────────────── */
+    .main {
+      display: grid;
+      grid-template-columns: 320px 1fr 340px;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* ─── LEFT PANEL ───────────────────────── */
+    .left-panel {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .victim-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .victim-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .victim-card::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+    }
+
+    .victim-card.critical::before { background: var(--danger); }
+    .victim-card.moderate::before { background: var(--warn); }
+    .victim-card.stable::before   { background: var(--safe); }
+
+    .victim-card:hover { border-color: var(--info); }
+
+    .victim-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .victim-id {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .victim-card.critical .victim-id { color: var(--danger); }
+    .victim-card.moderate .victim-id { color: var(--warn); }
+    .victim-card.stable .victim-id   { color: var(--safe); }
+
+    .urgency-badge {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 2px 7px;
+      border-radius: 100px;
+      font-weight: 700;
+    }
+
+    .urgency-badge.critical {
+      background: rgba(255,59,78,0.15);
+      color: var(--danger);
+      border: 1px solid rgba(255,59,78,0.3);
+    }
+
+    .urgency-badge.moderate {
+      background: rgba(255,140,0,0.15);
+      color: var(--warn);
+      border: 1px solid rgba(255,140,0,0.3);
+    }
+
+    .urgency-badge.stable {
+      background: rgba(0,214,143,0.1);
+      color: var(--safe);
+      border: 1px solid rgba(0,214,143,0.3);
+    }
+
+    .victim-desc { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+
+    .victim-meta {
+      display: flex;
+      gap: 10px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .victim-meta span { display: flex; align-items: center; gap: 3px; }
+
+    /* Cluster badge */
+    .cluster-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      background: rgba(155,89,255,0.1);
+      color: var(--purple);
+      border: 1px solid rgba(155,89,255,0.2);
+      border-radius: 100px;
+      padding: 2px 7px;
+    }
+
+    /* ─── MAP ──────────────────────────────── */
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    .leaflet-container {
+      background: #0b0e12 !important;
+    }
+
+    /* Map controls overlay */
+    .map-overlay {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 16px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: 11px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    /* ─── RIGHT PANEL ──────────────────────── */
+    .right-panel {
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .route-cards {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .route-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+
+    .route-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .route-id {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--info);
+    }
+
+    .route-victims {
+      font-size: 10px;
+      background: rgba(0,149,255,0.1);
+      color: var(--info);
+      border: 1px solid rgba(0,149,255,0.2);
+      padding: 2px 8px;
+      border-radius: 100px;
+    }
+
+    .route-stops {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .route-stop {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+    }
+
+    .stop-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .stop-num.c { background: rgba(255,59,78,0.2); color: var(--danger); border: 1px solid rgba(255,59,78,0.4); }
+    .stop-num.m { background: rgba(255,140,0,0.2); color: var(--warn); border: 1px solid rgba(255,140,0,0.4); }
+    .stop-num.s { background: rgba(0,214,143,0.1); color: var(--safe); border: 1px solid rgba(0,214,143,0.3); }
+
+    .stop-arrow { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+
+    .route-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 10px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+
+    .assign-btn {
+      width: 100%;
+      margin-top: 8px;
+      padding: 8px;
+      background: rgba(0,149,255,0.1);
+      border: 1px solid rgba(0,149,255,0.3);
+      border-radius: 7px;
+      color: var(--info);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Space Grotesk', sans-serif;
+      transition: background 0.15s;
+    }
+
+    .assign-btn:hover { background: rgba(0,149,255,0.2); }
+
+    /* AI Analysis box */
+    .ai-analysis {
+      background: var(--surface2);
+      border: 1px solid rgba(155,89,255,0.2);
+      border-radius: 10px;
+      padding: 14px;
+      margin: 8px;
+    }
+
+    .ai-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--purple);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .ai-text {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .ai-text strong { color: var(--text); }
+
+    /* Mesh network status */
+    .mesh-status {
+      padding: 10px 12px;
+      background: var(--surface2);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+    }
+
+    .mesh-peers {
+      display: flex;
+      gap: 3px;
+    }
+
+    .mesh-peer {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--safe);
+      opacity: 0.6;
+    }
+
+    .mesh-peer.active { opacity: 1; animation: meshpulse 2s infinite; }
+    @keyframes meshpulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+    /* Mark self button */
+    .mark-self {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      background: var(--danger);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 14px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: 'Space Grotesk', sans-serif;
+      box-shadow: 0 4px 20px rgba(255,59,78,0.4);
+      animation: sosPulse 2s infinite;
+    }
+
+    @keyframes sosPulse {
+      0%,100%{ box-shadow: 0 4px 20px rgba(255,59,78,0.4); }
+      50%{ box-shadow: 0 4px 32px rgba(255,59,78,0.7); }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🚨</div>
+    <span>ResQ<span>Net</span></span>
+  </div>
+
+  <div class="header-stats">
+    <div class="hstat danger">
+      <div class="hstat-val" id="critCount">14</div>
+      <div class="hstat-label">Critical</div>
+    </div>
+    <div class="hstat warn">
+      <div class="hstat-val" id="modCount">31</div>
+      <div class="hstat-label">Moderate</div>
+    </div>
+    <div class="hstat safe">
+      <div class="hstat-val" id="safeCount">89</div>
+      <div class="hstat-label">Safe / Marked</div>
+    </div>
+    <div class="hstat info">
+      <div class="hstat-val" id="volCount">12</div>
+      <div class="hstat-label">Volunteers</div>
+    </div>
+  </div>
+
+  <div class="header-actions">
+    <div class="pulse-dot"></div>
+    <span style="font-size:11px;color:var(--muted)">LIVE — Mesh P2P</span>
+    <button class="btn btn-ghost" style="font-size:11px;">📡 Mesh: 47 peers</button>
+    <button class="btn btn-primary" onclick="addVictim()">+ Mark Location</button>
+    <button class="btn btn-danger">🆘 SOS Broadcast</button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT: Victim / Civilian List -->
+  <div class="left-panel">
+    <div class="panel-header">
+      <div class="panel-title">Civilians Tracked</div>
+      <div style="font-size:10px;color:var(--purple)">AI Clustered</div>
+    </div>
+
+    <div style="padding:8px;border-bottom:1px solid var(--border);">
+      <input type="text" placeholder="Search by location, ID, status..." style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 12px;font-size:11px;color:var(--text);font-family:'Space Grotesk',sans-serif;outline:none;"/>
+    </div>
+
+    <div class="victim-list" id="victimList"></div>
+  </div>
+
+  <!-- CENTER: Map -->
+  <div style="position:relative;">
+    <div id="map"></div>
+
+    <!-- Map legend overlay -->
+    <div class="map-overlay">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--danger)"></div> Critical</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--warn)"></div> Moderate</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--safe)"></div> Safe</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--info)"></div> Volunteer</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div> Cluster</div>
+    </div>
+
+    <!-- SOS button -->
+    <button class="mark-self" onclick="markSelf()">🆘 MARK MY LOCATION</button>
+  </div>
+
+  <!-- RIGHT: Routes & AI -->
+  <div class="right-panel">
+    <div class="panel-header">
+      <div class="panel-title">AI Rescue Routes</div>
+      <div style="font-size:10px;color:var(--safe)">Auto-generated</div>
+    </div>
+
+    <div class="ai-analysis">
+      <div class="ai-header">🤖 AI Situation Analysis</div>
+      <div class="ai-text">
+        <strong>Cluster A</strong> (NW, 7 civilians) is highest priority — 3 critical trapped in collapsed structure on Nehru St. Recommend diverting Route 1 volunteer team.<br/><br/>
+        <strong>Flood rise rate</strong>: +2cm/hr in Sector 4. Routes via Bridge St will be <strong>impassable in ~45 min</strong> — rerouting auto-triggered.<br/><br/>
+        <strong>Mesh signal</strong> degrading in Sector 7 — 3 civilians may be offline. Last GPS: 13.08°N, 80.27°E.
+      </div>
+    </div>
+
+    <div class="route-cards" id="routeCards"></div>
+
+    <div class="mesh-status">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="color:var(--safe);">📡 Mesh Network</div>
+        <div class="mesh-peers">
+          <div class="mesh-peer active"></div>
+          <div class="mesh-peer active"></div>
+          <div class="mesh-peer active"></div>
+          <div class="mesh-peer"></div>
+          <div class="mesh-peer active"></div>
+          <div class="mesh-peer"></div>
+          <div class="mesh-peer active"></div>
+          <div class="mesh-peer active"></div>
+        </div>
+      </div>
+      <div style="color:var(--muted)">47 peers · P2P sync · No internet needed</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ─── Sample Data ─────────────────────────────────────────
+const civilians = [
+  { id:"C-001", lat:13.0827, lng:80.2707, status:"critical", desc:"Trapped under debris, 3rd floor", time:"2m ago", count:1, cluster:"A" },
+  { id:"C-002", lat:13.0841, lng:80.2698, status:"critical", desc:"Medical emergency — chest pain", time:"5m ago", count:1, cluster:"A" },
+  { id:"C-003", lat:13.0835, lng:80.2720, status:"critical", desc:"4 trapped in flooded basement", time:"1m ago", count:4, cluster:"A" },
+  { id:"C-004", lat:13.0812, lng:80.2680, status:"moderate", desc:"Elderly — needs evacuation support", time:"8m ago", count:2, cluster:"B" },
+  { id:"C-005", lat:13.0800, lng:80.2690, status:"moderate", desc:"Building structurally unsafe", time:"12m ago", count:5, cluster:"B" },
+  { id:"C-006", lat:13.0860, lng:80.2740, status:"moderate", desc:"Stranded on rooftop", time:"3m ago", count:3, cluster:"C" },
+  { id:"C-007", lat:13.0870, lng:80.2750, status:"moderate", desc:"Child separated from family", time:"15m ago", count:1, cluster:"C" },
+  { id:"C-008", lat:13.0790, lng:80.2660, status:"stable", desc:"Safe, needs transport", time:"20m ago", count:8, cluster:"D" },
+  { id:"C-009", lat:13.0880, lng:80.2770, status:"critical", desc:"Unconscious — immediate help", time:"Just now", count:1, cluster:"C" },
+  { id:"C-010", lat:13.0810, lng:80.2710, status:"moderate", desc:"Water rising — ground floor", time:"7m ago", count:6, cluster:"B" },
+];
+
+const routes = [
+  {
+    id: "ROUTE-1",
+    volunteer: "Team Alpha (4 people)",
+    stops: [
+      { id:"C-001", status:"critical", desc:"Nehru St — trapped debris" },
+      { id:"C-002", status:"critical", desc:"Nehru St — medical" },
+      { id:"C-003", status:"critical", desc:"Rajan Ave — flooded basement" },
+    ],
+    distance: "1.2 km",
+    eta: "~8 min",
+    priority: "URGENT"
+  },
+  {
+    id: "ROUTE-2",
+    volunteer: "Team Bravo (3 people)",
+    stops: [
+      { id:"C-009", status:"critical", desc:"Rooftop — unconscious" },
+      { id:"C-006", status:"moderate", desc:"Rooftop — stranded" },
+      { id:"C-007", status:"moderate", desc:"Child — separated" },
+    ],
+    distance: "0.8 km",
+    eta: "~5 min",
+    priority: "HIGH"
+  },
+  {
+    id: "ROUTE-3",
+    volunteer: "Team Charlie (2 people)",
+    stops: [
+      { id:"C-004", status:"moderate", desc:"Elderly — evacuation" },
+      { id:"C-005", status:"moderate", desc:"Unsafe building — 5 people" },
+      { id:"C-010", status:"moderate", desc:"Ground floor — rising water" },
+    ],
+    distance: "1.6 km",
+    eta: "~12 min",
+    priority: "MEDIUM"
+  },
+];
+
+// ─── Render Victim List ───────────────────────────────────
+function renderVictims() {
+  const list = document.getElementById("victimList");
+  list.innerHTML = "";
+  civilians.forEach(v => {
+    const card = document.createElement("div");
+    card.className = `victim-card ${v.status}`;
+    card.innerHTML = `
+      <div class="victim-top">
+        <div class="victim-id">${v.id}</div>
+        <div class="urgency-badge ${v.status}">${v.status.toUpperCase()}</div>
+      </div>
+      <div class="victim-desc">${v.desc}</div>
+      <div class="victim-meta">
+        <span>🕐 ${v.time}</span>
+        <span>👥 ${v.count} person${v.count>1?'s':''}</span>
+        <div class="cluster-tag">⬡ Cluster ${v.cluster}</div>
+      </div>
+    `;
+    card.onclick = () => map.setView([v.lat, v.lng], 17);
+    list.appendChild(card);
+  });
+}
+
+// ─── Render Route Cards ───────────────────────────────────
+function renderRoutes() {
+  const container = document.getElementById("routeCards");
+  container.innerHTML = "";
+  routes.forEach(r => {
+    const card = document.createElement("div");
+    card.className = "route-card";
+    card.innerHTML = `
+      <div class="route-header">
+        <div class="route-id">${r.id}</div>
+        <div class="route-victims">${r.stops.length} stops</div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:8px;">${r.volunteer}</div>
+      <div class="route-stops">
+        ${r.stops.map((s,i) => `
+          <div class="route-stop">
+            <div class="stop-num ${s.status[0]}">${i+1}</div>
+            <div style="flex:1;font-size:10px;">${s.id} — ${s.desc}</div>
+            ${i < r.stops.length-1 ? '<div class="stop-arrow">↓</div>' : ''}
+          </div>
+        `).join('')}
+      </div>
+      <div class="route-meta">
+        <span>📍 ${r.distance}</span>
+        <span>⏱️ ETA ${r.eta}</span>
+        <span style="margin-left:auto;color:${r.priority==='URGENT'?'var(--danger)':r.priority==='HIGH'?'var(--warn)':'var(--info)'}">● ${r.priority}</span>
+      </div>
+      <button class="assign-btn" onclick="assignRoute('${r.id}')">Assign & Navigate →</button>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function assignRoute(id) {
+  alert(`Route ${id} assigned to volunteer team. Navigation started in ResQNet mobile app.`);
+}
+
+// ─── Leaflet Map ──────────────────────────────────────────
+const map = L.map("map", {
+  center: [13.083, 80.271],
+  zoom: 15,
+  zoomControl: false
+});
+
+// Dark tile layer
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{x}/{y}{r}.png", {
+  attribution: "© CartoDB",
+  maxZoom: 19
+}).addTo(map);
+
+L.control.zoom({ position: "bottomright" }).addTo(map);
+
+// Color mapping
+const colorMap = { critical: "#ff3b4e", moderate: "#ff8c00", stable: "#00d68f" };
+const radiusMap = { critical: 14, moderate: 11, stable: 8 };
+
+// Draw civilian markers
+civilians.forEach(v => {
+  const color = colorMap[v.status];
+  const radius = radiusMap[v.status];
+
+  const marker = L.circleMarker([v.lat, v.lng], {
+    radius,
+    fillColor: color,
+    color: color,
+    fillOpacity: 0.85,
+    weight: 2,
+    opacity: 0.9
+  }).addTo(map);
+
+  marker.bindPopup(`
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:12px;min-width:180px;color:#e8eaf0;background:#181c23;padding:8px;">
+      <div style="color:${color};font-weight:700;margin-bottom:4px;">${v.id} — ${v.status.toUpperCase()}</div>
+      <div>${v.desc}</div>
+      <div style="margin-top:4px;color:#5a6070;">👥 ${v.count} person${v.count>1?'s':''} · ${v.time}</div>
+      <div style="margin-top:4px;font-size:10px;background:rgba(155,89,255,0.1);color:#9b59ff;padding:2px 6px;border-radius:4px;display:inline-block;">Cluster ${v.cluster}</div>
+    </div>
+  `, { className: "dark-popup" });
+
+  // Pulse animation for critical
+  if (v.status === "critical") {
+    L.circleMarker([v.lat, v.lng], {
+      radius: radius + 6,
+      fillColor: color,
+      color: color,
+      fillOpacity: 0,
+      weight: 1.5,
+      opacity: 0.4
+    }).addTo(map);
+  }
+});
+
+// Draw cluster polygons (convex hulls approximation)
+const clusters = { A: [], B: [], C: [], D: [] };
+civilians.forEach(v => clusters[v.cluster]?.push([v.lat, v.lng]));
+
+Object.entries(clusters).forEach(([label, pts]) => {
+  if (pts.length < 2) return;
+  const poly = L.polygon(pts, {
+    color: "#9b59ff",
+    fillColor: "#9b59ff",
+    fillOpacity: 0.04,
+    weight: 1,
+    dashArray: "4 4"
+  }).addTo(map);
+  poly.bindTooltip(`Cluster ${label}`, { permanent: true, direction: "center", className: "cluster-tooltip" });
+});
+
+// Draw example route line
+const route1Pts = civilians.filter(c => ["C-001","C-002","C-003"].includes(c.id)).map(c => [c.lat, c.lng]);
+L.polyline([[13.0790, 80.265], ...route1Pts], {
+  color: "#0095ff",
+  weight: 3,
+  opacity: 0.7,
+  dashArray: "8 4"
+}).addTo(map);
+
+// Volunteer markers
+const volunteers = [
+  { lat: 13.079, lng: 80.265, id: "Team Alpha" },
+  { lat: 13.088, lng: 80.278, id: "Team Bravo" },
+  { lat: 13.080, lng: 80.269, id: "Team Charlie" },
+];
+
+volunteers.forEach(v => {
+  L.circleMarker([v.lat, v.lng], {
+    radius: 10,
+    fillColor: "#0095ff",
+    color: "#0095ff",
+    fillOpacity: 0.9,
+    weight: 2
+  }).addTo(map)
+    .bindTooltip(v.id, { permanent: false });
+});
+
+// ─── Add Victim Function ───────────────────────────────────
+function addVictim() {
+  const status = prompt("Status (critical/moderate/stable)?", "critical");
+  const desc = prompt("Description?", "Need help");
+  if (status && desc) {
+    const center = map.getCenter();
+    const newV = {
+      id: `C-${String(civilians.length+1).padStart(3,'0')}`,
+      lat: center.lat + (Math.random()-0.5)*0.002,
+      lng: center.lng + (Math.random()-0.5)*0.002,
+      status, desc, time: "Just now", count: 1, cluster: "E"
+    };
+    civilians.push(newV);
+    L.circleMarker([newV.lat, newV.lng], {
+      radius: radiusMap[status] || 10,
+      fillColor: colorMap[status] || "#999",
+      color: colorMap[status] || "#999",
+      fillOpacity: 0.85, weight: 2
+    }).addTo(map).bindPopup(`<b>${newV.id}</b>: ${desc}`).openPopup();
+    renderVictims();
+    document.getElementById("critCount").textContent =
+      civilians.filter(c => c.status==="critical").length;
+  }
+}
+
+function markSelf() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      alert(`Your location (${lat.toFixed(5)}, ${lng.toFixed(5)}) has been shared with the rescue network via mesh.`);
+      L.circleMarker([lat, lng], {
+        radius: 12, fillColor: "#ff3b4e", color: "white",
+        fillOpacity: 0.95, weight: 2
+      }).addTo(map).bindPopup("<b>YOU</b> — SOS sent").openPopup();
+      map.setView([lat, lng], 16);
+    }, () => alert("Could not get location — check GPS permissions."));
+  } else {
+    alert("Geolocation not available. Enter manually.");
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────
+renderVictims();
+renderRoutes();
+
+// Simulate live updates
+setInterval(() => {
+  const randomV = civilians[Math.floor(Math.random() * civilians.length)];
+  randomV.time = "Just now";
+  renderVictims();
+}, 8000);
+</script>
+</body>
+</html>
